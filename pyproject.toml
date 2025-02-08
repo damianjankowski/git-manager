@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "git-manager"
+version = "0.1.0"
+description = ""
+authors = ["Damian Jankowski"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+requests = "^2.32.3"
+gitpython = "3.1.42"
+loguru = "0.6.0"
+tabulate = "0.8.0"
+pre-commit = "4.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
