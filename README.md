@@ -36,4 +36,3 @@ poetry run python main.py --sync --group_id your-group-id --group_directory /pat
 ### Requirements
 
 - A valid GitLab access token (`GITLAB_TOKEN`) must be set in the environment variables.
-
