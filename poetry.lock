@@ -380,12 +380,13 @@ files = [
 
 [[package]]
 name = "tabulate"
-version = "0.8.0"
+version = "0.9.0"
 description = "Pretty-print tabular data"
 optional = false
-python-versions = "*"
+python-versions = ">=3.7"
 files = [
-    {file = "tabulate-0.8.0.tar.gz", hash = "sha256:682d903555bcf24b881835c0bcbec1841d156aacacd29cf050d8ce9c522ac343"},
+    {file = "tabulate-0.9.0-py3-none-any.whl", hash = "sha256:024ca478df22e9340661486f85298cff5f6dcdba14f3813e8830015b9ed1948f"},
+    {file = "tabulate-0.9.0.tar.gz", hash = "sha256:0095b12bf5966de529c0feb1fa08671671b3368eec77d7ef7ab114be2c068b3c"},
 ]
 
 [package.extras]
@@ -445,4 +446,4 @@ dev = ["black (>=19.3b0)", "pytest (>=4.6.2)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "64cb61b673b49e0db2125bf72bd3e46cfd8fdaaea1d9ebd6e89a6d2f493ead95"
+content-hash = "5be8831f1d3c0735e747be884e04b0ea51533322404b906d0833c9aceac0cf07"
