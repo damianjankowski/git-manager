@@ -9,7 +9,7 @@ readme = "README.md"
 python = "^3.12"
 requests = "^2.32.3"
 gitpython = "3.1.44"
-loguru = "0.6.0"
+loguru = "0.7.3"
 tabulate = "0.8.0"
 pre-commit = "4.0.0"
 
