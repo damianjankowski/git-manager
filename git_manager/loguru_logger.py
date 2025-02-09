@@ -1,31 +1,24 @@
-import json
 import sys
 
 from loguru import logger
 
+logger.remove()
 
-def serialize_log(record):
-    log_data = {
-        "timestamp": record["time"].timestamp(),
-        "level": record["level"].name,
-        "message": record["message"],
-        "file": record["file"].name,
-        "line": record["line"],
-        "function": record["function"],
-    }
-    return json.dumps(log_data)
+logger.add(
+    sys.stderr,
+    level="INFO",
+)
 
+# logger.add(
+#     sys.stdout,
+#     serialize=True,
+#     level="INFO"
+# )
 
-def log_formatter(record):
-    record["extra"]["serialized"] = serialize_log(record)
-    return "{extra[serialized]}\n"
+logging = logger
 
-
-def setup_logger():
-    logger.remove()
-
-    logger.add(sys.stdout, colorize=True, format=log_formatter, serialize=True)
-    return logger
-
-
-logging = setup_logger()
+# Example usage
+if __name__ == "__main__":
+    logging.info("This is an info message")
+    logging.warning("This is a warning message")
+    logging.error("This is an error message")

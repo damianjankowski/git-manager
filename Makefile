@@ -23,7 +23,7 @@ COLOR_CYAN  := \033[36m
 
 # Application Configuration
 # -----------------------------------------------------------------------------
-PACKAGE_NAME := my_project
+PACKAGE_NAME := git_manager
 MAIN		 := $(PACKAGE_NAME)/main.py
 
 # Default Goal
