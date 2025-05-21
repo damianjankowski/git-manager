@@ -24,14 +24,14 @@ echo "Searching for Git repositories in directory: $ROOT_DIR"
 
 find "$ROOT_DIR" -type d -name ".git" | while read -r git_dir; do
   repo_dir=$(dirname "$git_dir")
-  
+
   echo "Found Git repository: $repo_dir"
-  
+
   cd "$repo_dir" || continue
-  
+
   git config user.name "$GIT_USER_NAME"
   git config user.email "$GIT_USER_EMAIL"
-  
+
   echo "Set git config for $repo_dir:"
   echo "  user.name: $(git config user.name)"
   echo "  user.email: $(git config user.email)"
