@@ -250,14 +250,11 @@ class GitLabClient(ABC):
     ):
         pass
 
-    @abstractmethod
-    def get_group_repositories(self):
-        pass
-
 
 class GitLabRepo(GitLabClient):
-    def __init__(self, group_id: str):
+    def __init__(self, group_id: str, gitlab_host: str = "gitlab.com"):
         super().__init__(group_id)
+        self.gitlab_host = gitlab_host
         self._token = self._get_token()
         self._headers = {"PRIVATE-TOKEN": self._token}
         self._session = self._get_session()
@@ -304,7 +301,7 @@ class GitLabRepo(GitLabClient):
         return results
 
     def get_group_repositories(self) -> Dict[str, str]:
-        url = f"https://gitlab.com/api/v4/groups/{self.group_id}/projects"
+        url = f"https://{self.gitlab_host}/api/v4/groups/{self.group_id}/projects"
 
         try:
             logging.info("Retriving GitLab group repositories...")
@@ -491,6 +488,12 @@ def main():
             help="Base directory for locating repositories (default: current working directory)",
         )
         args_parser.add_argument("--group_id", type=str, default=os.getenv("GROUP_ID", ""))
+        args_parser.add_argument(
+            "--gitlab-host",
+            type=str,
+            default=os.getenv("GITLAB_HOST", "gitlab.com"),
+            help="GitLab host (default: gitlab.com)",
+        )
         args_parser.add_argument("--cleanup", action="store_true", help="Cleanup old branches")
         args_parser.add_argument("--sync", action="store_true", help="Sync repositories")
         args_parser.add_argument("--clone", action="store_true", help="Clone group repository")
@@ -501,34 +504,23 @@ def main():
         if not os.path.isdir(Path(parser.group_directory)):
             create_directory(Path(parser.group_directory))
 
-        if parser.cleanup:
-            repositories = [
-                Repository(repo_path)
-                for repo_path in RepositoryGroup(parser.group_directory)
-                .find_local_repos()
-                .values()
-            ]
-            repo = RepoManageService(
-                group_directory=parser.group_directory, repositories=repositories
+        if parser.group_id:
+            gitlab_repo = GitLabRepo(group_id=parser.group_id, gitlab_host=parser.gitlab_host)
+            gitlab_service = GitLabService(
+                group_directory=parser.group_directory, gitlab=gitlab_repo
             )
-            repo.prune()
+            if parser.sync:
+                gitlab_service.sync()
 
-        if parser.sync:
-            gitlab = GitLabRepo(parser.group_id)
-            repo = GitLabService(gitlab=gitlab, group_directory=parser.group_directory)
-            repo.sync()
+            if parser.clone:
+                gitlab_service.clone_group_repositories()
 
-        if parser.clone:
-            gitlab = GitLabRepo(parser.group_id)
-            repo = GitLabService(gitlab=gitlab, group_directory=parser.group_directory)
-            repo.clone_group_repositories()
+        if parser.cleanup:
+            repo_service = RepoManageService(group_directory=parser.group_directory)
+            repo_service.prune()
 
-    except EnvironmentError:
-        exit(1)
-
-    except Exception as e:
-        logging.error(f"Unexpected error in main: {e}")
-        exit(1)
+    except (EnvironmentError, GitLabAPIError) as e:
+        logging.error(f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
