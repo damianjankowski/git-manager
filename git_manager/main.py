@@ -254,7 +254,7 @@ class GitLabClient(ABC):
 class GitLabRepo(GitLabClient):
     def __init__(self, group_id: str, gitlab_host: str = "gitlab.com"):
         super().__init__(group_id)
-        self.gitlab_host = gitlab_host
+        self.gitlab_host = gitlab_host.replace("https://", "").replace("http://", "")
         self._token = self._get_token()
         self._headers = {"PRIVATE-TOKEN": self._token}
         self._session = self._get_session()
@@ -432,11 +432,41 @@ class GitLabService:
         )
 
         if to_delete:
-            for directory in to_delete:
-                remove_directory(directory)
-            logging.info("Repositories were deleted")
+            print("\n" + "="*80)
+            print("WARNING: The following repositories will be DELETED:")
+            print("="*80)
+            for i, directory in enumerate(to_delete, 1):
+                print(f"{i:2d}. {directory}")
+            print("="*80)
+            print(f"Total: {len(to_delete)} repositories will be permanently removed")
+            print("="*80)
+            
+            response = input("\nDo you want to proceed with deletion? (yes/no): ").strip().lower()
+            
+            if response in ['yes', 'y']:
+                print("\nProceeding with deletion...")
+                deleted_count = 0
+                failed_deletions = []
+                
+                for directory in to_delete:
+                    try:
+                        remove_directory(directory)
+                        deleted_count += 1
+                        logging.info(f"Successfully deleted: {directory}")
+                    except Exception as e:
+                        failed_deletions.append((directory, str(e)))
+                        logging.error(f"Failed to delete {directory}: {e}")
+                
+                print(f"\nSuccessfully deleted {deleted_count} repositories")
+                if failed_deletions:
+                    print(f"Failed to delete {len(failed_deletions)} repositories:")
+                    for dir_path, error in failed_deletions:
+                        print(f"   - {dir_path}: {error}")
+            else:
+                print("Deletion cancelled by user")
+                logging.info("Repository deletion cancelled by user")
         else:
-            logging.info("Lack of repositories to delete!")
+            logging.info("No repositories to delete - all local repositories exist on GitLab")
 
     def clone_group_repositories(self):
         logging.info("Cloning group repositories from GitLab...")
@@ -444,18 +474,26 @@ class GitLabService:
             cmd = ["glab", "repo", "clone", "-g", self.gitlab.group_id, "-p", "--paginate"]
 
             process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE, cwd=self.group_directory
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE, cwd=self.group_directory
             )
 
-            for line in process.stdout:
-                print(line, end="")
-
             stdout, stderr = process.communicate()
-            print(stdout)
-            import sys
-
+            
+            if stdout:
+                print(stdout.decode('utf-8'))
+            
             if stderr:
-                print(stderr, file=sys.stderr)
+                stderr_text = stderr.decode('utf-8')
+                lines = stderr_text.strip().split('\n')
+                for line in lines:
+                    if line and 'already exists and is not an empty directory' in line:
+                        logging.warning(f"Repository already exists: {line}")
+                    elif line and 'Error: "exit status 128"' in line:
+                        # This is likely related to the "already exists" error, treat as warning
+                        logging.warning(f"Clone warning: {line}")
+                    elif line:
+                        # Other errors should still be reported
+                        logging.error(f"Clone error: {line}")
 
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             logging.error(f"Failed to clone group repositories: {e}")
