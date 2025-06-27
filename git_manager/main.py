@@ -432,22 +432,24 @@ class GitLabService:
         )
 
         if to_delete:
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("WARNING: The following repositories will be DELETED:")
-            print("="*80)
+            print("=" * 80)
             for i, directory in enumerate(to_delete, 1):
                 print(f"{i:2d}. {directory}")
-            print("="*80)
+            print("=" * 80)
             print(f"Total: {len(to_delete)} repositories will be permanently removed")
-            print("="*80)
-            
-            response = input("\nDo you want to proceed with deletion? (yes/no): ").strip().lower()
-            
-            if response in ['yes', 'y']:
+            print("=" * 80)
+
+            response = (
+                input("\nDo you want to proceed with deletion? (yes/no): ").strip().lower()
+            )
+
+            if response in ["yes", "y"]:
                 print("\nProceeding with deletion...")
                 deleted_count = 0
                 failed_deletions = []
-                
+
                 for directory in to_delete:
                     try:
                         remove_directory(directory)
@@ -456,7 +458,7 @@ class GitLabService:
                     except Exception as e:
                         failed_deletions.append((directory, str(e)))
                         logging.error(f"Failed to delete {directory}: {e}")
-                
+
                 print(f"\nSuccessfully deleted {deleted_count} repositories")
                 if failed_deletions:
                     print(f"Failed to delete {len(failed_deletions)} repositories:")
@@ -474,19 +476,23 @@ class GitLabService:
             cmd = ["glab", "repo", "clone", "-g", self.gitlab.group_id, "-p", "--paginate"]
 
             process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE, cwd=self.group_directory
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                cwd=self.group_directory,
             )
 
             stdout, stderr = process.communicate()
-            
+
             if stdout:
-                print(stdout.decode('utf-8'))
-            
+                print(stdout.decode("utf-8"))
+
             if stderr:
-                stderr_text = stderr.decode('utf-8')
-                lines = stderr_text.strip().split('\n')
+                stderr_text = stderr.decode("utf-8")
+                lines = stderr_text.strip().split("\n")
                 for line in lines:
-                    if line and 'already exists and is not an empty directory' in line:
+                    if line and "already exists and is not an empty directory" in line:
                         logging.warning(f"Repository already exists: {line}")
                     elif line and 'Error: "exit status 128"' in line:
                         # This is likely related to the "already exists" error, treat as warning
