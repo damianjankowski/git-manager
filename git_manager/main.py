@@ -87,9 +87,7 @@ def run_command(
         logging.error(f"Command timed out after {timeout}s: cmd: {cmd}, path: {path}")
         raise
     except subprocess.CalledProcessError as e:
-        logging.error(
-            f"Command failed with code {e.returncode}: cmd: {cmd}, path: {path}"
-        )
+        logging.error(f"Command failed with code {e.returncode}: cmd: {cmd}, path: {path}")
         logging.error(f"Error output: {e.stderr}")
         raise
     except OSError as e:
@@ -153,9 +151,7 @@ class Repository:
         stdout = output.stdout.strip()
 
         if not stdout:
-            logging.warning(
-                f"No output received from git command in repository {self.path}."
-            )
+            logging.warning(f"No output received from git command in repository {self.path}.")
             return branches
 
         for line in stdout.splitlines():
@@ -207,16 +203,12 @@ class Repository:
     def safe_checkout(self) -> bool:
         try:
             if not getattr(self.repository.head, "is_valid", lambda: False)():
-                logging.warning(
-                    f"Repository {self.path} has no commits, skipping checkout."
-                )
+                logging.warning(f"Repository {self.path} has no commits, skipping checkout.")
                 return False
 
             default_branch = self.get_default_branch_name()
             if not default_branch:
-                logging.warning(
-                    f"No default branch found for {self.path}. Skipping checkout."
-                )
+                logging.warning(f"No default branch found for {self.path}. Skipping checkout.")
                 return False
 
             if self.has_uncommitted_files():
@@ -243,9 +235,7 @@ class Repository:
             logging.info(f"Deleted branch: {branch_name} in {self.path}")
             return True
         except Exception as e:
-            logging.error(
-                f"Not able to delete a branch {branch_name} in {self.path}: {e}"
-            )
+            logging.error(f"Not able to delete a branch {branch_name} in {self.path}: {e}")
             return False
 
 
@@ -312,9 +302,7 @@ class GitLabRepo(GitLabClient):
                 page += 1
             else:
                 logging.error(f"Error {response.status_code} while accessing {url}")
-                raise GitLabAPIError(
-                    f"Error {response.status_code} while accessing {url}"
-                )
+                raise GitLabAPIError(f"Error {response.status_code} while accessing {url}")
         return results
 
     def get_group_repositories(self) -> Dict[str, str]:
@@ -333,9 +321,7 @@ class GitLabRepo(GitLabClient):
 
 
 class RepoManageService:
-    def __init__(
-        self, group_directory: Path, repositories: Optional[List[Repository]] = None
-    ):
+    def __init__(self, group_directory: Path, repositories: Optional[List[Repository]] = None):
         self.group_directory = group_directory.resolve()
         self.group_repository = RepositoryGroup(self.group_directory)
         self.repositories = (
@@ -364,9 +350,7 @@ class RepoManageService:
             all_branches = repository.get_branches_with_commit_dates()
 
             for branch_to_delete, commit_timestamp in all_branches.items():
-                repository_age = (
-                    datetime.now().timestamp() - commit_timestamp
-                ) / 86400.0
+                repository_age = (datetime.now().timestamp() - commit_timestamp) / 86400.0
                 if repository_age < config.DAYS_OLD_THRESHOLD:
                     continue
 
@@ -382,8 +366,7 @@ class RepoManageService:
             else "Lack of deleted branches"
         )
         print(
-            f"Failed to delete branches ({len(not_deleted)}):\n"
-            + "\n".join(not_deleted)
+            f"Failed to delete branches ({len(not_deleted)}):\n" + "\n".join(not_deleted)
             if not_deleted
             else "No failures!"
         )
@@ -407,7 +390,8 @@ class GitLabService:
             self.group_directory.relative_to(self.base_directory)
         except ValueError:
             raise ValueError(
-                f"Group directory {self.group_directory} is not within base directory {self.base_directory}"
+                f"Group directory {self.group_directory} is not "
+                f"within base directory {self.base_directory}"
             )
 
     def _ensure_group_directory_exists(self):
@@ -422,8 +406,7 @@ class GitLabService:
         group_repository = RepositoryGroup(self.group_directory)
         logging.info(f"Loading local repositories from: {self.group_directory}")
         return [
-            Repository(repo_path)
-            for repo_path in group_repository.find_local_repos().values()
+            Repository(repo_path) for repo_path in group_repository.find_local_repos().values()
         ]
 
     def _map_gitlab_group_repos_to_absolute_path(
@@ -457,14 +440,13 @@ class GitLabService:
                 repo.relative_to(self.group_directory)
                 safe_repos_to_delete.append(repo)
                 relative_path = repo.relative_to(self.group_directory)
-                logging.info(
-                    f"Repository to delete: {relative_path} (not found on GitLab)"
-                )
+                logging.info(f"Repository to delete: {relative_path} (not found on GitLab)")
             except ValueError:
                 logging.warning(f"Skipping repository outside group directory: {repo}")
         if safe_repos_to_delete:
             logging.warning(
-                f"Found {len(safe_repos_to_delete)} repositories to delete that don't exist on GitLab"
+                f"Found {len(safe_repos_to_delete)} repositories to delete "
+                f"that don't exist on GitLab"
             )
         else:
             logging.info("All local repositories are synchronized with GitLab")
@@ -481,7 +463,8 @@ class GitLabService:
 
         gitlab_repositories = self.gitlab.get_group_repositories()
         logging.info(
-            f"Found {len(gitlab_repositories)} repositories on GitLab for group '{self.group_id}'"
+            f"Found {len(gitlab_repositories)} repositories "
+            f"on GitLab for group '{self.group_id}'"
         )
 
         mapped_gitlab_repositories = self._map_gitlab_group_repos_to_absolute_path(
@@ -492,9 +475,7 @@ class GitLabService:
         )
         gp = RepositoryGroup(self.group_directory)
         local_repositories = gp.find_local_repos()
-        logging.info(
-            f"Found {len(local_repositories)} local repositories in group directory"
-        )
+        logging.info(f"Found {len(local_repositories)} local repositories in group directory")
 
         to_delete = self._identify_repos_to_delete(
             local_repositories=local_repositories,
@@ -504,7 +485,8 @@ class GitLabService:
         if to_delete:
             print("\n" + "=" * 80)
             print(
-                f"WARNING: The following repositories from group '{self.group_id}' will be DELETED:"
+                f"WARNING: The following repositories "
+                f"from group '{self.group_id}' will be DELETED:"
             )
             print(f"Working in: {self.group_directory}")
             print("=" * 80)
@@ -517,9 +499,7 @@ class GitLabService:
             print(f"Base directory: {self.group_directory}")
             print("=" * 80)
             print("\nSafety checks:")
-            print(
-                f"✓ All repositories are within group directory: {self.group_directory}"
-            )
+            print(f"✓ All repositories are within group directory: {self.group_directory}")
             print(f"✓ Operations limited to group '{self.group_id}' only")
             print(f"✓ Other groups in {self.base_directory} will NOT be affected")
 
@@ -536,7 +516,8 @@ class GitLabService:
                     break
                 else:
                     print(
-                        f"Please type exactly 'DELETE {self.group_id}' to confirm or 'no' to cancel"
+                        f"Please type exactly 'DELETE {self.group_id}' "
+                        f"to confirm or 'no' to cancel"
                     )
 
             print("\nProceeding with deletion...")
@@ -564,7 +545,8 @@ class GitLabService:
                     print(f"   - {dir_path}: {error}")
         else:
             logging.info(
-                f"No repositories to delete - all local repositories in group '{self.group_id}' exist on GitLab"
+                f"No repositories to delete - all local repositories "
+                f"in group '{self.group_id}' exist on GitLab"
             )
 
     def clone_group_repositories(self):
@@ -623,9 +605,7 @@ class GitLabService:
                         repo_match = re.search(r"'([^']+)'", line)
                         if repo_match:
                             repo_name = repo_match.group(1)
-                            logging.info(
-                                f"[SKIP] Repository already exists: {repo_name}"
-                            )
+                            logging.info(f"[SKIP] Repository already exists: {repo_name}")
                         else:
                             logging.warning(f"Repository already exists: {line}")
 
@@ -662,9 +642,7 @@ class GitLabService:
             logging.info("=" * 60)
 
             if return_code != 0:
-                logging.warning(
-                    f"Process completed with non-zero exit code: {return_code}"
-                )
+                logging.warning(f"Process completed with non-zero exit code: {return_code}")
 
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             logging.error(f"Failed to clone group repositories: {e}")
@@ -694,26 +672,19 @@ def main():
             "--group_directory",
             type=Path,
             default=Path(os.getenv("GROUP_DIRECTORY", Path.cwd())),
-            help="Base directory for group repositories (e.g., /Users/user/repo). Group subdirectory will be created automatically.",
+            help="Base directory for group repositories (e.g., /Users/user/repo). "
+            "Group subdirectory will be created automatically.",
         )
-        args_parser.add_argument(
-            "--group_id", type=str, default=os.getenv("GROUP_ID", "")
-        )
+        args_parser.add_argument("--group_id", type=str, default=os.getenv("GROUP_ID", ""))
         args_parser.add_argument(
             "--gitlab-host",
             type=str,
             default=os.getenv("GITLAB_HOST", "gitlab.com"),
             help="GitLab host (default: gitlab.com)",
         )
-        args_parser.add_argument(
-            "--cleanup", action="store_true", help="Cleanup old branches"
-        )
-        args_parser.add_argument(
-            "--sync", action="store_true", help="Sync repositories"
-        )
-        args_parser.add_argument(
-            "--clone", action="store_true", help="Clone group repository"
-        )
+        args_parser.add_argument("--cleanup", action="store_true", help="Cleanup old branches")
+        args_parser.add_argument("--sync", action="store_true", help="Sync repositories")
+        args_parser.add_argument("--clone", action="store_true", help="Clone group repository")
         args_parser.add_argument(
             "--verbose",
             "-v",
@@ -728,7 +699,10 @@ def main():
             logger.add(
                 sys.stderr,
                 level="DEBUG",
-                format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+                format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> |"
+                " <level>{level: <8}</level> |"
+                " <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
+                "- <level>{message}</level>",
             )
             logging.debug("Debug logging enabled")
 
@@ -744,9 +718,7 @@ def main():
             logging.info(f"Group ID: {parser.group_id}")
             logging.info(f"Group directory: {group_specific_directory}")
 
-            gitlab_repo = GitLabRepo(
-                group_id=parser.group_id, gitlab_host=parser.gitlab_host
-            )
+            gitlab_repo = GitLabRepo(group_id=parser.group_id, gitlab_host=parser.gitlab_host)
             gitlab_service = GitLabService(
                 base_directory=parser.group_directory,
                 group_id=parser.group_id,
@@ -760,13 +732,12 @@ def main():
 
         if parser.cleanup:
             if not parser.group_id:
-                logging.error(
-                    "--group_id is required for cleanup operations to ensure safety"
-                )
+                logging.error("--group_id is required for cleanup operations to ensure safety")
                 return
             group_specific_directory = Path(parser.group_directory) / parser.group_id
             logging.info(
-                f"Running cleanup for group '{parser.group_id}' in directory: {group_specific_directory}"
+                f"Running cleanup for group '{parser.group_id}' "
+                f"in directory: {group_specific_directory}"
             )
 
             repo_service = RepoManageService(group_directory=group_specific_directory)
