@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -376,35 +377,48 @@ class RepoManageService:
 
 
 class GitLabService:
-    def __init__(self, group_directory: Path, gitlab: GitLabRepo):
-        self.group_directory = group_directory.resolve()
+    def __init__(self, base_directory: Path, group_id: str, gitlab: GitLabRepo):
+        self.base_directory = base_directory.resolve()
+        self.group_id = group_id
+        self.group_directory = (self.base_directory / self.group_id).resolve()
         self.gitlab = gitlab
+
+        try:
+            self.group_directory.relative_to(self.base_directory)
+        except ValueError:
+            raise ValueError(f"Group directory {self.group_directory} is not within base directory {self.base_directory}")
+
+    def _ensure_group_directory_exists(self):
+        """Ensure the group directory exists, creating it if necessary."""
+        if not self.group_directory.exists():
+            logging.info(f"Creating group directory: {self.group_directory}")
+            self.group_directory.mkdir(parents=True, exist_ok=True)
 
     @cached_property
     def repositories(self):
+        self._ensure_group_directory_exists()
         group_repository = RepositoryGroup(self.group_directory)
-        logging.info("Loading local repositories...")
+        logging.info(f"Loading local repositories from: {self.group_directory}")
         return [
             Repository(repo_path) for repo_path in group_repository.find_local_repos().values()
         ]
 
-    @property
-    def base_path(self):
-        return Path(
-            str(self.group_directory).removesuffix(f"/{self.gitlab.group_id}").rstrip("/")
-        )
-
     def _map_gitlab_group_repos_to_absolute_path(
         self, gitlab_repositories: Dict[str, str]
     ) -> Set[Path]:
-        return {
-            (
-                (self.base_path / Path(path)).resolve()
-                if not Path(path).is_absolute()
-                else Path(path).resolve()
-            )
-            for path in gitlab_repositories.keys()
-        }
+        mapped_paths = set()
+        group_prefix = f"{self.group_id}/"
+        
+        for path in gitlab_repositories.keys():
+            if path.startswith(group_prefix):
+                local_path = path[len(group_prefix):]
+            else:
+                local_path = path
+            abs_path = (self.group_directory / Path(local_path)).resolve()
+            mapped_paths.add(abs_path)
+            logging.debug(f"Mapped GitLab path '{path}' -> Local path '{abs_path}'")
+        
+        return mapped_paths
 
     def _identify_repos_to_delete(
         self, local_repositories: Dict[str, Path], mapped_gitlab_repositories: Set[Path]
@@ -414,18 +428,39 @@ class GitLabService:
             for relative_path, full_path in local_repositories.items()
             if full_path.resolve() not in mapped_gitlab_repositories
         ]
+        safe_repos_to_delete = []
         for repo in repos_to_delete:
-            logging.info(f"Repository to delete: {repo} (not found on GitLab)")
-        return repos_to_delete
+            try:
+                repo.relative_to(self.group_directory)
+                safe_repos_to_delete.append(repo)
+                relative_path = repo.relative_to(self.group_directory)
+                logging.info(f"Repository to delete: {relative_path} (not found on GitLab)")
+            except ValueError:
+                logging.warning(f"Skipping repository outside group directory: {repo}")
+        if safe_repos_to_delete:
+            logging.warning(f"Found {len(safe_repos_to_delete)} repositories to delete that don't exist on GitLab")
+        else:
+            logging.info("All local repositories are synchronized with GitLab")
+        
+        return safe_repos_to_delete
 
     def sync(self):
+        logging.info(f"Starting sync for group '{self.group_id}' in directory: {self.group_directory}")
+        
         self.clone_group_repositories()
+        self._ensure_group_directory_exists()
+        
         gitlab_repositories = self.gitlab.get_group_repositories()
+        logging.info(f"Found {len(gitlab_repositories)} repositories on GitLab for group '{self.group_id}'")
+        
         mapped_gitlab_repositories = self._map_gitlab_group_repos_to_absolute_path(
             gitlab_repositories
         )
+        logging.info(f"Mapped {len(mapped_gitlab_repositories)} GitLab repositories to local paths")
         gp = RepositoryGroup(self.group_directory)
         local_repositories = gp.find_local_repos()
+        logging.info(f"Found {len(local_repositories)} local repositories in group directory")
+        
         to_delete = self._identify_repos_to_delete(
             local_repositories=local_repositories,
             mapped_gitlab_repositories=mapped_gitlab_repositories,
@@ -433,73 +468,140 @@ class GitLabService:
 
         if to_delete:
             print("\n" + "=" * 80)
-            print("WARNING: The following repositories will be DELETED:")
+            print(f"WARNING: The following repositories from group '{self.group_id}' will be DELETED:")
+            print(f"Working in: {self.group_directory}")
             print("=" * 80)
             for i, directory in enumerate(to_delete, 1):
-                print(f"{i:2d}. {directory}")
+                relative_path = directory.relative_to(self.group_directory)
+                print(f"{i:2d}. {relative_path}")
             print("=" * 80)
             print(f"Total: {len(to_delete)} repositories will be permanently removed")
+            print(f"Group: {self.group_id}")
+            print(f"Base directory: {self.group_directory}")
             print("=" * 80)
+            print("\nSafety checks:")
+            print(f"✓ All repositories are within group directory: {self.group_directory}")
+            print(f"✓ Operations limited to group '{self.group_id}' only")
+            print(f"✓ Other groups in {self.base_directory} will NOT be affected")
+            
+            while True:
+                response = input(f"\nType 'DELETE {self.group_id}' to confirm deletion (or 'no' to cancel): ").strip()
+                
+                if response.lower() in ['no', 'n', 'cancel']:
+                    print("Deletion cancelled by user")
+                    logging.info("Repository deletion cancelled by user")
+                    return
+                elif response == f"DELETE {self.group_id}":
+                    break
+                else:
+                    print(f"Please type exactly 'DELETE {self.group_id}' to confirm or 'no' to cancel")
 
-            response = (
-                input("\nDo you want to proceed with deletion? (yes/no): ").strip().lower()
-            )
+            print("\nProceeding with deletion...")
+            deleted_count = 0
+            failed_deletions = []
 
-            if response in ["yes", "y"]:
-                print("\nProceeding with deletion...")
-                deleted_count = 0
-                failed_deletions = []
+            for directory in to_delete:
+                try:
+                    relative_path = directory.relative_to(self.group_directory)
+                    remove_directory(directory)
+                    deleted_count += 1
+                    logging.info(f"Successfully deleted: {relative_path}")
+                    print(f"✓ Deleted: {relative_path}")
+                except Exception as e:
+                    relative_path = directory.relative_to(self.group_directory)
+                    failed_deletions.append((relative_path, str(e)))
+                    logging.error(f"Failed to delete {relative_path}: {e}")
+                    print(f"✗ Failed to delete: {relative_path}")
 
-                for directory in to_delete:
-                    try:
-                        remove_directory(directory)
-                        deleted_count += 1
-                        logging.info(f"Successfully deleted: {directory}")
-                    except Exception as e:
-                        failed_deletions.append((directory, str(e)))
-                        logging.error(f"Failed to delete {directory}: {e}")
-
-                print(f"\nSuccessfully deleted {deleted_count} repositories")
-                if failed_deletions:
-                    print(f"Failed to delete {len(failed_deletions)} repositories:")
-                    for dir_path, error in failed_deletions:
-                        print(f"   - {dir_path}: {error}")
-            else:
-                print("Deletion cancelled by user")
-                logging.info("Repository deletion cancelled by user")
+            print(f"\nDeletion Summary:")
+            print(f"Successfully deleted {deleted_count} repositories")
+            if failed_deletions:
+                print(f"Failed to delete {len(failed_deletions)} repositories:")
+                for dir_path, error in failed_deletions:
+                    print(f"   - {dir_path}: {error}")
         else:
-            logging.info("No repositories to delete - all local repositories exist on GitLab")
+            logging.info(f"No repositories to delete - all local repositories in group '{self.group_id}' exist on GitLab")
 
     def clone_group_repositories(self):
-        logging.info("Cloning group repositories from GitLab...")
+        logging.info(f"Cloning repositories for group '{self.group_id}' into: {self.group_directory}")
+        
         try:
             cmd = ["glab", "repo", "clone", "-g", self.gitlab.group_id, "-p", "--paginate"]
+            logging.info(f"Executing command: {' '.join(cmd)}")
+            logging.info(f"Working directory: {self.base_directory}")
 
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 stdin=subprocess.PIPE,
-                cwd=self.group_directory,
+                cwd=self.base_directory,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
             )
 
-            stdout, stderr = process.communicate()
-
-            if stdout:
-                print(stdout.decode("utf-8"))
-
-            if stderr:
-                stderr_text = stderr.decode("utf-8")
-                lines = stderr_text.strip().split("\n")
-                for line in lines:
-                    if line and "already exists and is not an empty directory" in line:
-                        logging.warning(f"Repository already exists: {line}")
-                    elif line and 'Error: "exit status 128"' in line:
-                        # This is likely related to the "already exists" error, treat as warning
-                        logging.warning(f"Clone warning: {line}")
-                    elif line:
-                        # Other errors should still be reported
+            cloned_count = 0
+            skipped_count = 0
+            error_count = 0
+            while True:
+                stderr_line = process.stderr.readline()
+                if stderr_line == '' and process.poll() is not None:
+                    break
+                
+                if stderr_line:
+                    line = stderr_line.strip()
+                    if not line:
+                        continue
+                    if "Cloning into" in line:
+                        cloned_count += 1
+                        repo_match = re.search(r"Cloning into '([^']+)'", line)
+                        if repo_match:
+                            repo_name = repo_match.group(1)
+                            progress_msg = f"[{cloned_count}] Cloning: {repo_name}"
+                            logging.info(progress_msg)
+                        else:
+                            logging.info(f"[{cloned_count}] {line}")
+                            
+                    elif "already exists and is not an empty directory" in line:
+                        skipped_count += 1
+                        repo_match = re.search(r"'([^']+)'", line)
+                        if repo_match:
+                            repo_name = repo_match.group(1)
+                            logging.info(f"[SKIP] Repository already exists: {repo_name}")
+                        else:
+                            logging.warning(f"Repository already exists: {line}")
+                            
+                    elif 'Error: "exit status 128"' in line:
+                        logging.debug(f"Clone status: {line}")
+                        
+                    elif "remote:" in line or "Receiving objects:" in line or "Resolving deltas:" in line:
+                        logging.debug(f"Git progress: {line}")
+                        
+                    elif "error:" in line.lower() or "fatal:" in line.lower():
+                        error_count += 1
                         logging.error(f"Clone error: {line}")
+                        
+                    else:
+                        logging.debug(f"Clone output: {line}")
+            stdout_output = process.stdout.read()
+            if stdout_output:
+                logging.info(f"Additional output: {stdout_output}")
+            return_code = process.wait()
+            
+            logging.info("=" * 60)
+            logging.info(f"Clone operation completed for group '{self.group_id}'!")
+            logging.info(f"Summary:")
+            logging.info(f"  - Group: {self.group_id}")
+            logging.info(f"  - Directory: {self.group_directory}")
+            logging.info(f"  - Repositories cloned: {cloned_count}")
+            logging.info(f"  - Repositories skipped (already exist): {skipped_count}")
+            logging.info(f"  - Errors encountered: {error_count}")
+            logging.info(f"  - Exit code: {return_code}")
+            logging.info("=" * 60)
+            
+            if return_code != 0:
+                logging.warning(f"Process completed with non-zero exit code: {return_code}")
 
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             logging.error(f"Failed to clone group repositories: {e}")
@@ -529,7 +631,7 @@ def main():
             "--group_directory",
             type=Path,
             default=Path(os.getenv("GROUP_DIRECTORY", Path.cwd())),
-            help="Base directory for locating repositories (default: current working directory)",
+            help="Base directory for group repositories (e.g., /Users/user/repo). Group subdirectory will be created automatically.",
         )
         args_parser.add_argument("--group_id", type=str, default=os.getenv("GROUP_ID", ""))
         args_parser.add_argument(
@@ -541,7 +643,17 @@ def main():
         args_parser.add_argument("--cleanup", action="store_true", help="Cleanup old branches")
         args_parser.add_argument("--sync", action="store_true", help="Sync repositories")
         args_parser.add_argument("--clone", action="store_true", help="Clone group repository")
+        args_parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose (debug) logging")
         parser = args_parser.parse_args()
+        if parser.verbose:
+            from loguru import logger
+            logger.remove()
+            logger.add(
+                sys.stderr,
+                level="DEBUG",
+                format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+            )
+            logging.debug("Debug logging enabled")
 
         check_dependencies("glab")
 
@@ -549,9 +661,15 @@ def main():
             create_directory(Path(parser.group_directory))
 
         if parser.group_id:
+            group_specific_directory = Path(parser.group_directory) / parser.group_id
+            
+            logging.info(f"Base directory: {parser.group_directory}")
+            logging.info(f"Group ID: {parser.group_id}")
+            logging.info(f"Group directory: {group_specific_directory}")
+            
             gitlab_repo = GitLabRepo(group_id=parser.group_id, gitlab_host=parser.gitlab_host)
             gitlab_service = GitLabService(
-                group_directory=parser.group_directory, gitlab=gitlab_repo
+                base_directory=parser.group_directory, group_id=parser.group_id, gitlab=gitlab_repo
             )
             if parser.sync:
                 gitlab_service.sync()
@@ -560,7 +678,13 @@ def main():
                 gitlab_service.clone_group_repositories()
 
         if parser.cleanup:
-            repo_service = RepoManageService(group_directory=parser.group_directory)
+            if not parser.group_id:
+                logging.error("--group_id is required for cleanup operations to ensure safety")
+                return
+            group_specific_directory = Path(parser.group_directory) / parser.group_id
+            logging.info(f"Running cleanup for group '{parser.group_id}' in directory: {group_specific_directory}")
+            
+            repo_service = RepoManageService(group_directory=group_specific_directory)
             repo_service.prune()
 
     except (EnvironmentError, GitLabAPIError) as e:

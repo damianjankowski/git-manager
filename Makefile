@@ -78,14 +78,17 @@ pre-commit: ## Run pre-commit checks on all files.
 .PHONY: sync
 sync: ## Sync GitLab group repositories with the local machine.
 	@echo -e "${COLOR_GREEN}Syncing GitLab group repositories...${COLOR_RESET}"
+	@echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$(GROUP_ID)${COLOR_RESET}"
 	poetry run python $(MAIN) --sync --group_id $(GROUP_ID) --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST)
 
 .PHONY: clone
 clone: ## Clone GitLab group repositories.
 	@echo -e "${COLOR_GREEN}Cloning GitLab group repositories...${COLOR_RESET}"
+	@echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$(GROUP_ID)${COLOR_RESET}"
 	poetry run python $(MAIN) --clone --group_id $(GROUP_ID) --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST)
 
 .PHONY: cleanup-branches
 cleanup-branches: ## Clean up old branches.
-	@echo -e "${COLOR_BLUE}Updating (pulling) GitLab group repositories...${COLOR_RESET}"
-	poetry run python $(MAIN) --cleanup --group_directory $(GROUP_DIRECTORY)/$(GROUP_ID)
+	@echo -e "${COLOR_BLUE}Cleaning up old branches in group repositories...${COLOR_RESET}"
+	@echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$(GROUP_ID)${COLOR_RESET}"
+	poetry run python $(MAIN) --cleanup --group_id $(GROUP_ID) --group_directory $(GROUP_DIRECTORY)

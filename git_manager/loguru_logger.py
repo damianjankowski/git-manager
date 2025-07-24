@@ -17,7 +17,6 @@ logger.add(
 
 logging = logger
 
-# Example usage
 if __name__ == "__main__":
     logging.info("This is an info message")
     logging.warning("This is a warning message")
