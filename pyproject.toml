@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "git-manager"
+version = "0.1.0"
+description = ""
+authors = ["Damian Jankowski"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+requests = "^2.32.3"
+gitpython = "3.1.44"
+loguru = "0.7.3"
+tabulate = "0.9.0"
+pre-commit = "4.2.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 97
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+fixable = ["I"]
