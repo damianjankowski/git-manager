@@ -1,0 +1,20 @@
+{
+  "extends": [
+    "config:base",
+    "group:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["digest", "patch", "minor", "pin"],
+      "automerge": true
+    }
+  ],
+  "pip_requirements": {
+    "enabled": true
+  },
+  "enabledManagers": ["pip_requirements", "poetry", "pipenv"],
+  "platformAutomerge": true,
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 5
+}
