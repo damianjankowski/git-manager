@@ -15,6 +15,8 @@ GITLAB_TOKEN := ${GITLAB_TOKEN}
 GROUP_ID := ${GROUP_ID}
 GITLAB_HOST := ${GITLAB_HOST}
 GROUP_DIRECTORY := ${GROUP_DIRECTORY}
+GROUP_IDS := ${GROUP_IDS}
+GROUP_LIST := $(strip $(GROUP_IDS))
 
 # Colored Output
 # -----------------------------------------------------------------------------
@@ -80,6 +82,22 @@ sync: ## Sync GitLab group repositories with the local machine.
 	@echo -e "${COLOR_GREEN}Syncing GitLab group repositories...${COLOR_RESET}"
 	@echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$(GROUP_ID)${COLOR_RESET}"
 	poetry run python $(MAIN) --sync --group_id $(GROUP_ID) --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST)
+
+.PHONY: sync-groups sync-all
+sync-groups: ## Sync multiple groups defined in GROUP_IDS from .env
+	@if [ -z "$(GROUP_LIST)" ]; then \
+		echo -e "${COLOR_RED}No GROUP_IDS provided in .env. Set GROUP_IDS=group1 group2${COLOR_RESET}"; \
+		exit 1; \
+	fi
+	@echo -e "${COLOR_GREEN}Syncing multiple groups: $(GROUP_LIST)${COLOR_RESET}"
+	@for gid in $(GROUP_LIST); do \
+		echo -e "${COLOR_BLUE}==>  $$gid${COLOR_RESET}"; \
+		echo -e "${COLOR_BLUE}==>  $$gid${COLOR_RESET}"; \
+		echo -e "${COLOR_BLUE}==>  $$gid${COLOR_RESET}"; \
+		echo -e "${COLOR_BLUE}==> Syncing group: $$gid${COLOR_RESET}"; \
+		echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$$gid${COLOR_RESET}"; \
+		poetry run python $(MAIN) --sync --group_id $$gid --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST); \
+	done
 
 .PHONY: clone
 clone: ## Clone GitLab group repositories.
