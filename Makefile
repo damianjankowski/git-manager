@@ -96,7 +96,7 @@ sync-groups: ## Sync multiple groups defined in GROUP_IDS from .env
 		echo -e "${COLOR_BLUE}==>  $$gid${COLOR_RESET}"; \
 		echo -e "${COLOR_BLUE}==> Syncing group: $$gid${COLOR_RESET}"; \
 		echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$$gid${COLOR_RESET}"; \
-		poetry run python $(MAIN) --sync --group_id $$gid --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST); \
+		poetry run python $(MAIN) --sync --group_id $$gid --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST) || exit 1; \
 	done
 
 .PHONY: clone
