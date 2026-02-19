@@ -569,15 +569,20 @@ class GitLabService:
             logging.info(f"Executing command: {' '.join(cmd)}")
             logging.info(f"Working directory: {self.base_directory}")
 
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            env["GLAB_NO_INTERACTIVE"] = "1"
+
             process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                stdin=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
                 cwd=self.base_directory,
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
+                env=env,
             )
 
             cloned_count = 0
@@ -627,7 +632,10 @@ class GitLabService:
 
                     else:
                         logging.debug(f"Clone output: {line}")
-            stdout_output = process.stdout.read()
+            stdout_output = ""
+            if process.stdout:
+                stdout_output = process.stdout.read()
+
             if stdout_output:
                 logging.info(f"Additional output: {stdout_output}")
             return_code = process.wait()
