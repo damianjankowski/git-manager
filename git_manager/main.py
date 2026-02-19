@@ -266,7 +266,7 @@ class GitLabRepo(GitLabClient):
         token = os.environ.get("GITLAB_TOKEN")
         if not token:
             logging.error("GITLAB_TOKEN is not set in environment variables.")
-            
+
             sys.exit(1)
 
         return token
