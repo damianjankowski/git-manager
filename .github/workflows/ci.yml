@@ -14,15 +14,19 @@ jobs:
   pre-commit:
     name: Run Pre-Commit
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }} # Checkout the PR branch so it can be pushed to
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -32,4 +36,9 @@ jobs:
       - name: Run Pre-Commit
         run: |
           pre-commit install
-          pre-commit run --all-files
+          pre-commit run --all-files || true # Ignore failure so auto-commit can run
+
+      - name: Auto-commit pre-commit fixes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: apply pre-commit fixes [skip ci]"

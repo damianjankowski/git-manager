@@ -13,8 +13,9 @@
   "pip_requirements": {
     "enabled": true
   },
-  "enabledManagers": ["pip_requirements", "poetry", "pipenv"],
+  "enabledManagers": ["pip_requirements", "poetry", "pipenv", "pre-commit"],
   "platformAutomerge": true,
   "prHourlyLimit": 2,
-  "prConcurrentLimit": 5
+  "prConcurrentLimit": 5,
+  "ignoreScripts": false
 }
