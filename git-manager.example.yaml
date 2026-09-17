@@ -1,0 +1,19 @@
+# Copy to git-manager.yaml (gitignored) and adjust.
+# Each host writes into its own base_directory: <base_directory>/<group>.
+defaults:
+  # Archived projects are skipped by default, on both the clone and the sync side.
+  include_archived: false
+  # Optional fallback for hosts that do not set their own base_directory.
+  # base_directory: /Users/user/repo
+
+hosts:
+  - host: gitlab.example.com
+    base_directory: /Users/user/repo
+    groups:
+      - platform
+      - backend
+
+  - host: gitlab.com
+    base_directory: /Users/user/gitlab.com
+    groups:
+      - my-org

@@ -2,6 +2,7 @@ SHELL := /bin/bash
 
 # Environment Variables
 # -----------------------------------------------------------------------------
+# Optional: keep GITLAB_TOKEN in .env instead of exporting it in the shell.
 ENV_FILE := .env
 
 ifneq (,$(wildcard $(ENV_FILE)))
@@ -11,12 +12,15 @@ endif
 
 # User Variables
 # -----------------------------------------------------------------------------
-GITLAB_TOKEN := ${GITLAB_TOKEN}
-GROUP_ID := ${GROUP_ID}
-GITLAB_HOST := ${GITLAB_HOST}
-GROUP_DIRECTORY := ${GROUP_DIRECTORY}
-GROUP_IDS := ${GROUP_IDS}
-GROUP_LIST := $(strip $(GROUP_IDS))
+# Hosts, groups and base directories live in the YAML config.
+CONFIG ?= $(if ${GIT_MANAGER_CONFIG},${GIT_MANAGER_CONFIG},git-manager.yaml)
+
+# Narrow a run down. HOST is required when the config holds several hosts,
+# because GITLAB_TOKEN can only authenticate against one of them.
+HOST ?=
+GROUP ?=
+
+FILTERS := --config $(CONFIG) $(if $(HOST),--host $(HOST),) $(if $(GROUP),--group $(GROUP),)
 
 # Colored Output
 # -----------------------------------------------------------------------------
@@ -77,36 +81,28 @@ pre-commit: ## Run pre-commit checks on all files.
 
 ##@ Ops
 # -----------------------------------------------------------------------------
-.PHONY: sync
-sync: ## Sync GitLab group repositories with the local machine.
-	@echo -e "${COLOR_GREEN}Syncing GitLab group repositories...${COLOR_RESET}"
-	@echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$(GROUP_ID)${COLOR_RESET}"
-	poetry run python $(MAIN) --sync --group_id $(GROUP_ID) --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST)
+.PHONY: config
+config: ## Show the resolved config targets without touching any repository.
+	@echo -e "${COLOR_CYAN}Config: $(CONFIG)${COLOR_RESET}"
+	@cat $(CONFIG)
 
-.PHONY: sync-groups sync-all
-sync-groups: ## Sync multiple groups defined in GROUP_IDS from .env
-	@if [ -z "$(GROUP_LIST)" ]; then \
-		echo -e "${COLOR_RED}No GROUP_IDS provided in .env. Set GROUP_IDS=group1 group2${COLOR_RESET}"; \
-		exit 1; \
-	fi
-	@echo -e "${COLOR_GREEN}Syncing multiple groups: $(GROUP_LIST)${COLOR_RESET}"
-	@for gid in $(GROUP_LIST); do \
-		echo -e "${COLOR_BLUE}==>  $$gid${COLOR_RESET}"; \
-		echo -e "${COLOR_BLUE}==>  $$gid${COLOR_RESET}"; \
-		echo -e "${COLOR_BLUE}==>  $$gid${COLOR_RESET}"; \
-		echo -e "${COLOR_BLUE}==> Syncing group: $$gid${COLOR_RESET}"; \
-		echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$$gid${COLOR_RESET}"; \
-		poetry run python $(MAIN) --sync --group_id $$gid --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST) || exit 1; \
-	done
+.PHONY: sync
+sync: ## Sync repositories. Usage: make sync HOST=gitlab.com [GROUP=my-org]
+	@echo -e "${COLOR_GREEN}Syncing GitLab group repositories...${COLOR_RESET}"
+	poetry run python $(MAIN) --sync $(FILTERS)
+
+.PHONY: sync-all
+sync-all: ## Sync every host in the config. GITLAB_TOKEN must be valid for each.
+	@echo -e "${COLOR_GREEN}Syncing all hosts from $(CONFIG)...${COLOR_RESET}"
+	@echo -e "${COLOR_RED}GITLAB_TOKEN must be valid for every host in the config.${COLOR_RESET}"
+	poetry run python $(MAIN) --sync --all-hosts --config $(CONFIG)
 
 .PHONY: clone
-clone: ## Clone GitLab group repositories.
+clone: ## Clone repositories. Usage: make clone HOST=gitlab.com [GROUP=my-org]
 	@echo -e "${COLOR_GREEN}Cloning GitLab group repositories...${COLOR_RESET}"
-	@echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$(GROUP_ID)${COLOR_RESET}"
-	poetry run python $(MAIN) --clone --group_id $(GROUP_ID) --group_directory $(GROUP_DIRECTORY) --gitlab-host $(GITLAB_HOST)
+	poetry run python $(MAIN) --clone $(FILTERS)
 
 .PHONY: cleanup-branches
-cleanup-branches: ## Clean up old branches.
+cleanup-branches: ## Clean up old branches. Usage: make cleanup-branches HOST=... [GROUP=...]
 	@echo -e "${COLOR_BLUE}Cleaning up old branches in group repositories...${COLOR_RESET}"
-	@echo -e "${COLOR_CYAN}Working directory: $(GROUP_DIRECTORY)/$(GROUP_ID)${COLOR_RESET}"
-	poetry run python $(MAIN) --cleanup --group_id $(GROUP_ID) --group_directory $(GROUP_DIRECTORY)
+	poetry run python $(MAIN) --cleanup $(FILTERS)
