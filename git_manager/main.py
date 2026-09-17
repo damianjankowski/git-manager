@@ -10,8 +10,10 @@ from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 from typing import Dict, Final, List, Optional, Set, TypeAlias
+from urllib.parse import quote
 
 import requests
+from app_config import AppConfig, ConfigError, Target, load_config, normalize_gitlab_host
 from git import Repo
 from loguru_logger import logging
 
@@ -255,9 +257,15 @@ class GitLabClient(ABC):
 
 
 class GitLabRepo(GitLabClient):
-    def __init__(self, group_id: str, gitlab_host: str = "gitlab.com"):
+    def __init__(
+        self,
+        group_id: str,
+        gitlab_host: str = "gitlab.com",
+        include_archived: bool = False,
+    ):
         super().__init__(group_id)
-        self.gitlab_host = gitlab_host.replace("https://", "").replace("http://", "")
+        self.gitlab_host = normalize_gitlab_host(gitlab_host)
+        self.include_archived = include_archived
         self._token = self._get_token()
         self._headers = {"PRIVATE-TOKEN": self._token}
         self._session = self._get_session()
@@ -308,11 +316,19 @@ class GitLabRepo(GitLabClient):
         return results
 
     def get_group_repositories(self) -> Dict[str, str]:
-        url = f"https://{self.gitlab_host}/api/v4/groups/{self.group_id}/projects"
+        group_path = quote(str(self.group_id), safe="")
+        url = f"https://{self.gitlab_host}/api/v4/groups/{group_path}/projects"
+
+        params: Dict[str, bool] = {"include_subgroups": True}
+        if not self.include_archived:
+            params["archived"] = False
 
         try:
-            logging.info("Retriving GitLab group repositories...")
-            projects = self.get_json_response(url, params={"include_subgroups": True})
+            logging.info(
+                f"Retriving GitLab group repositories from {self.gitlab_host} "
+                f"for group '{self.group_id}'..."
+            )
+            projects = self.get_json_response(url, params=params)
             return {
                 project["path_with_namespace"]: project["http_url_to_repo"]
                 for project in projects
@@ -382,11 +398,18 @@ class RepoManageService:
 
 
 class GitLabService:
-    def __init__(self, base_directory: Path, group_id: str, gitlab: GitLabRepo):
+    def __init__(
+        self,
+        base_directory: Path,
+        group_id: str,
+        gitlab: GitLabRepo,
+        include_archived: bool = False,
+    ):
         self.base_directory = base_directory.resolve()
         self.group_id = group_id
         self.group_directory = (self.base_directory / self.group_id).resolve()
         self.gitlab = gitlab
+        self.include_archived = include_archived
 
         try:
             self.group_directory.relative_to(self.base_directory)
@@ -566,12 +589,18 @@ class GitLabService:
                 "-p",
                 "--paginate",
             ]
+            if not self.include_archived:
+                cmd.append("--archived=false")
             logging.info(f"Executing command: {' '.join(cmd)}")
             logging.info(f"Working directory: {self.base_directory}")
+            logging.info(f"GitLab host: {self.gitlab.gitlab_host}")
 
             env = os.environ.copy()
             env["GIT_TERMINAL_PROMPT"] = "0"
             env["GLAB_NO_INTERACTIVE"] = "1"
+            # glab resolves the instance from GITLAB_HOST; without this it would
+            # silently clone from whatever host the ambient environment points at.
+            env["GITLAB_HOST"] = self.gitlab.gitlab_host
 
             process = subprocess.Popen(
                 cmd,
@@ -675,86 +704,148 @@ def create_directory(path: Path):
         raise EnvironmentError
 
 
+def _configure_verbose_logging() -> None:
+    from loguru import logger
+
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level="DEBUG",
+        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> |"
+        " <level>{level: <8}</level> |"
+        " <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
+        "- <level>{message}</level>",
+    )
+    logging.debug("Debug logging enabled")
+
+
+def _resolve_targets(
+    config: AppConfig, host: Optional[str], group: Optional[str], all_hosts: bool
+) -> List[Target]:
+    """Pick the host/group pairs for this run, refusing to guess across hosts.
+
+    A single GITLAB_TOKEN is shared by the REST client and `glab`, so a run that
+    spans several hosts can only authenticate against one of them. Spanning hosts
+    therefore has to be asked for explicitly.
+    """
+    if not host and not all_hosts and len(config.hosts) > 1:
+        known = ", ".join(h.host for h in config.hosts)
+        raise ConfigError(
+            f"The config defines several hosts ({known}). Pass --host <host> to pick one, "
+            f"or --all-hosts to run against every host in one go. "
+            f"GITLAB_TOKEN must match the host being processed."
+        )
+
+    if all_hosts and len(config.hosts) > 1:
+        logging.warning(
+            "Running against all hosts with a single GITLAB_TOKEN - "
+            "hosts the token does not belong to will fail to authenticate."
+        )
+
+    return config.select(host=host, group=group)
+
+
+def _run_target(target: Target, config: AppConfig, actions: argparse.Namespace) -> None:
+    logging.info("=" * 60)
+    logging.info(f"Host: {target.host}")
+    logging.info(f"Group: {target.group}")
+    logging.info(f"Group directory: {target.group_directory}")
+    logging.info("=" * 60)
+
+    if actions.sync or actions.clone:
+        gitlab_repo = GitLabRepo(
+            group_id=target.group,
+            gitlab_host=target.host,
+            include_archived=config.include_archived,
+        )
+        gitlab_service = GitLabService(
+            base_directory=target.base_directory,
+            group_id=target.group,
+            gitlab=gitlab_repo,
+            include_archived=config.include_archived,
+        )
+
+        if actions.sync:
+            gitlab_service.sync()
+
+        if actions.clone:
+            gitlab_service.clone_group_repositories()
+
+    if actions.cleanup:
+        logging.info(f"Running branch cleanup in: {target.group_directory}")
+        RepoManageService(group_directory=target.group_directory).prune()
+
+
 def main():
+    args_parser = argparse.ArgumentParser(
+        description="Synchronize local Git repositories with GitLab groups "
+        "described in a YAML config."
+    )
+    args_parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(os.environ["GIT_MANAGER_CONFIG"])
+        if os.environ.get("GIT_MANAGER_CONFIG")
+        else None,
+        help="Path to the YAML config (default: git-manager.yaml in the current directory).",
+    )
+    args_parser.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        help="Only act on this host from the config (e.g. gitlab.com).",
+    )
+    args_parser.add_argument(
+        "--group",
+        type=str,
+        default=None,
+        help="Only act on this group from the config (e.g. my-org).",
+    )
+    args_parser.add_argument(
+        "--all-hosts",
+        action="store_true",
+        help="Act on every host in the config. Requires a token valid for each.",
+    )
+    args_parser.add_argument("--cleanup", action="store_true", help="Cleanup old branches")
+    args_parser.add_argument("--sync", action="store_true", help="Sync repositories")
+    args_parser.add_argument("--clone", action="store_true", help="Clone group repositories")
+    args_parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose (debug) logging",
+    )
+    parser = args_parser.parse_args()
+
+    if parser.verbose:
+        _configure_verbose_logging()
+
+    if not (parser.sync or parser.clone or parser.cleanup):
+        args_parser.error("Nothing to do: pass at least one of --sync, --clone, --cleanup.")
+
     try:
-        args_parser = argparse.ArgumentParser()
-        args_parser.add_argument(
-            "--group_directory",
-            type=Path,
-            default=Path(os.getenv("GROUP_DIRECTORY", Path.cwd())),
-            help="Base directory for group repositories (e.g., /Users/user/repo). "
-            "Group subdirectory will be created automatically.",
-        )
-        args_parser.add_argument("--group_id", type=str, default=os.getenv("GROUP_ID", ""))
-        args_parser.add_argument(
-            "--gitlab-host",
-            type=str,
-            default=os.getenv("GITLAB_HOST", "gitlab.com"),
-            help="GitLab host (default: gitlab.com)",
-        )
-        args_parser.add_argument("--cleanup", action="store_true", help="Cleanup old branches")
-        args_parser.add_argument("--sync", action="store_true", help="Sync repositories")
-        args_parser.add_argument("--clone", action="store_true", help="Clone group repository")
-        args_parser.add_argument(
-            "--verbose",
-            "-v",
-            action="store_true",
-            help="Enable verbose (debug) logging",
-        )
-        parser = args_parser.parse_args()
-        if parser.verbose:
-            from loguru import logger
-
-            logger.remove()
-            logger.add(
-                sys.stderr,
-                level="DEBUG",
-                format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> |"
-                " <level>{level: <8}</level> |"
-                " <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
-                "- <level>{message}</level>",
-            )
-            logging.debug("Debug logging enabled")
-
         check_dependencies("glab")
 
-        if not os.path.isdir(Path(parser.group_directory)):
-            create_directory(Path(parser.group_directory))
+        config = load_config(parser.config)
+        targets = _resolve_targets(
+            config, host=parser.host, group=parser.group, all_hosts=parser.all_hosts
+        )
 
-        if parser.group_id:
-            group_specific_directory = Path(parser.group_directory) / parser.group_id
+        for base_directory in {t.base_directory for t in targets}:
+            if not base_directory.is_dir():
+                create_directory(base_directory)
 
-            logging.info(f"Base directory: {parser.group_directory}")
-            logging.info(f"Group ID: {parser.group_id}")
-            logging.info(f"Group directory: {group_specific_directory}")
+        logging.info(f"Include archived: {config.include_archived}")
+        logging.info(f"Targets: {len(targets)}")
+        for target in targets:
+            logging.info(f"  {target.host}/{target.group} -> {target.group_directory}")
 
-            gitlab_repo = GitLabRepo(group_id=parser.group_id, gitlab_host=parser.gitlab_host)
-            gitlab_service = GitLabService(
-                base_directory=parser.group_directory,
-                group_id=parser.group_id,
-                gitlab=gitlab_repo,
-            )
-            if parser.sync:
-                gitlab_service.sync()
+        for target in targets:
+            _run_target(target, config, parser)
 
-            if parser.clone:
-                gitlab_service.clone_group_repositories()
-
-        if parser.cleanup:
-            if not parser.group_id:
-                logging.error("--group_id is required for cleanup operations to ensure safety")
-                return
-            group_specific_directory = Path(parser.group_directory) / parser.group_id
-            logging.info(
-                f"Running cleanup for group '{parser.group_id}' "
-                f"in directory: {group_specific_directory}"
-            )
-
-            repo_service = RepoManageService(group_directory=group_specific_directory)
-            repo_service.prune()
-
-    except (EnvironmentError, GitLabAPIError) as e:
+    except (EnvironmentError, GitLabAPIError, ConfigError) as e:
         logging.error(f"An error occurred: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

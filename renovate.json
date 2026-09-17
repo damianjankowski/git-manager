@@ -1,6 +1,6 @@
 {
   "extends": [
-    "config:base",
+    "config:recommended",
     "group:recommended",
     "helpers:pinGitHubActionDigests"
   ],
@@ -10,10 +10,7 @@
       "automerge": true
     }
   ],
-  "pip_requirements": {
-    "enabled": true
-  },
-  "enabledManagers": ["pip_requirements", "poetry", "pipenv", "pre-commit"],
+  "enabledManagers": ["poetry", "pre-commit", "github-actions", "mise"],
   "platformAutomerge": true,
   "prHourlyLimit": 2,
   "prConcurrentLimit": 5,
