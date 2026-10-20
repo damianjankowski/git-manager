@@ -53,16 +53,10 @@ help:  ## Display this help.
 
 ##@ Development
 # -----------------------------------------------------------------------------
-.PHONY: venv
-venv: ## Create a Poetry virtual environment in the project.
-	@echo -e "${COLOR_GREEN}Configuring Poetry virtual environment in project...${COLOR_RESET}"
-	poetry config virtualenvs.in-project true
-	poetry env use python3
-
 .PHONY: install
-install: venv ## Install dependencies.
-	@echo -e "${COLOR_GREEN}Installing dependencies from pyproject.toml...${COLOR_RESET}"
-	poetry install
+install: ## Create .venv and install dependencies from uv.lock.
+	@echo -e "${COLOR_GREEN}Installing dependencies from uv.lock...${COLOR_RESET}"
+	uv sync --locked
 
 .PHONY: clean
 clean: ## Clean environment by removing specific files and directories.
@@ -77,7 +71,7 @@ clean: ## Clean environment by removing specific files and directories.
 .PHONY: pre-commit
 pre-commit: ## Run pre-commit checks on all files.
 	@echo -e "${COLOR_RED}Running pre-commit checks...${COLOR_RESET}"
-	poetry run pre-commit run --all-files
+	uv run pre-commit run --all-files
 
 ##@ Ops
 # -----------------------------------------------------------------------------
@@ -89,20 +83,20 @@ config: ## Show the resolved config targets without touching any repository.
 .PHONY: sync
 sync: ## Sync repositories. Usage: make sync HOST=gitlab.com [GROUP=my-org]
 	@echo -e "${COLOR_GREEN}Syncing GitLab group repositories...${COLOR_RESET}"
-	poetry run python $(MAIN) --sync $(FILTERS)
+	uv run python $(MAIN) --sync $(FILTERS)
 
 .PHONY: sync-all
 sync-all: ## Sync every host in the config. GITLAB_TOKEN must be valid for each.
 	@echo -e "${COLOR_GREEN}Syncing all hosts from $(CONFIG)...${COLOR_RESET}"
 	@echo -e "${COLOR_RED}GITLAB_TOKEN must be valid for every host in the config.${COLOR_RESET}"
-	poetry run python $(MAIN) --sync --all-hosts --config $(CONFIG)
+	uv run python $(MAIN) --sync --all-hosts --config $(CONFIG)
 
 .PHONY: clone
 clone: ## Clone repositories. Usage: make clone HOST=gitlab.com [GROUP=my-org]
 	@echo -e "${COLOR_GREEN}Cloning GitLab group repositories...${COLOR_RESET}"
-	poetry run python $(MAIN) --clone $(FILTERS)
+	uv run python $(MAIN) --clone $(FILTERS)
 
 .PHONY: cleanup-branches
 cleanup-branches: ## Clean up old branches. Usage: make cleanup-branches HOST=... [GROUP=...]
 	@echo -e "${COLOR_BLUE}Cleaning up old branches in group repositories...${COLOR_RESET}"
-	poetry run python $(MAIN) --cleanup $(FILTERS)
+	uv run python $(MAIN) --cleanup $(FILTERS)
