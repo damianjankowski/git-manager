@@ -1,23 +1,26 @@
-[tool.poetry]
+[project]
 name = "git-manager"
 version = "0.1.0"
 description = ""
-authors = ["Damian Jankowski"]
+authors = [{ name = "Damian Jankowski" }]
 readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.34.0,<3",
+    "gitpython>=3.1.50,<4",
+    "loguru==0.7.3",
+    "tabulate>=0.10.0,<0.11",
+    "pyyaml>=6.0.3,<7",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-requests = "^2.34.0"
-gitpython = "^3.1.50"
-loguru = "0.7.3"
-tabulate = "^0.10.0"
-pyyaml = "^6.0.3"
-pre-commit = "^4.6.0"
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0,<5",
+]
 
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+# CLI run from source (uv run python git_manager/main.py), not a distributable package.
+package = false
 
 [tool.ruff]
 line-length = 97

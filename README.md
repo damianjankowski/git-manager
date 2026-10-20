@@ -13,10 +13,11 @@ YAML configuration.
 
 ## Installation
 
-Install dependencies using Poetry:
+Python and uv are pinned in `mise.toml`. Create `.venv` and install dependencies
+from `uv.lock`:
 
 ```
-poetry install
+make install    # uv sync --locked
 ```
 
 ## Configuration
@@ -70,7 +71,7 @@ make config                                    # show the config in use
 ### Direct invocation
 
 ```
-poetry run python git_manager/main.py --sync --host gitlab.com --group my-org
+uv run python git_manager/main.py --sync --host gitlab.com --group my-org
 ```
 
 ### Parameters
